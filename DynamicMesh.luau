@@ -7,7 +7,6 @@
 ]]
 
 --!native
---!optimize 2
 --!strict
 
 
@@ -18,97 +17,91 @@ local AssetService = game:GetService("AssetService")
 local Module = {}
 Module.__index = Module
 
+export type ColorID = number
+export type NormalID = number
+export type TextureID = number
+export type TriangleID = number
+export type UVID = number
+export type VertexID = number
+
 export type DynamicMesh = typeof(setmetatable({} :: {
-	EditableMesh: EditableMesh,
-	SpatialDictionary: {number}
+	EditableMesh: EditableMesh
 }, Module))
 
 
 -- -- Helpers
 
-local content_fromObject = Content.fromObject
+local Content_fromObject = Content.fromObject
+local Content_fromUri = Content.fromUri
 
-local table_clear = table.clear
-local table_create = table.create
-
-local vector3_new = Vector3.new -- I would use vector.create but Luau doesn't recognize that type as a Vector3.
+local Table_create = table.create
 
 
 -- -- Functions
 
-function Module.new(editableMesh: EditableMesh?): DynamicMesh
-	editableMesh = editableMesh or AssetService:CreateEditableMesh()
+--[[
+	Clone the DynamicMesh.
+]]
+function Module.fromDynamicMesh(self: DynamicMesh): DynamicMesh
 	return setmetatable({
-		EditableMesh = editableMesh,
-		SpatialDictionary = {}
+		EditableMesh = AssetService:CreateEditableMeshAsync(Content_fromObject(self.EditableMesh))
+	}, Module)
+end
+
+function Module.fromMeshPart(meshPart: MeshPart): DynamicMesh
+	return setmetatable({
+		EditableMesh = AssetService:CreateEditableMeshAsync(Content_fromUri(meshPart.MeshId))
+	}, Module)
+end
+
+function Module.new(): DynamicMesh
+	return setmetatable({
+		EditableMesh = AssetService:CreateEditableMesh()
 	}, Module)
 end
 
 
 -- -- Methods
 
-function Module.addTriangles(self: DynamicMesh, vertexIDs: {number}): {number}
-	local vertexCount = #vertexIDs
-	if vertexCount % 3 ~= 0 then
-		error(`Number of vertices must be a multiple of 3; got {vertexCount}`)
-	end
-	
+function Module.addColor(self: DynamicMesh, color3: Color3, alpha: number): ColorID
+	return self.EditableMesh:AddColor(color3, alpha)
+end
+
+function Module.addTriangleByIDs(self: DynamicMesh, vertexID1: VertexID, vertexID2: VertexID, vertexID3: VertexID): TriangleID
+	return self.EditableMesh:AddTriangle(vertexID1, vertexID2, vertexID3)
+end
+
+function Module.addTriangleByVectors(self: DynamicMesh, vertex1: vector, vertex2: vector, vertex3: vector): TriangleID
 	local editableMesh = self.EditableMesh
-	local triangleIdentities = table_create(vertexCount, 0)
+	return editableMesh:AddTriangle(e:AddVertex(vertex1), e:AddVertex(vertex2), e:AddVertex(vertex3))
+end
+
+--[[
+	vertexIDs: an array, whose length must be a multiple of 3, of vertex IDs 
+]]
+function Module.addTrianglesByIDs(self: DynamicMesh, vertexIDs: {number}): {TriangleID}
+	local editableMesh = self.EditableMesh
+	local triangleIDs = Table_create(vertexCount, 0)
 	for index = 1, vertexCount, 3 do
-		triangleIdentities[index] = editableMesh:AddTriangle(vertexIDs[index], vertexIDs[index + 1], vertexIDs[index + 2])
+		triangleIDs[index] = editableMesh:AddTriangle(vertexIDs[index], vertexIDs[index + 1], vertexIDs[index + 2])
 	end
 	
-	return triangleIdentities
+	return triangleIDs
+end
+
+function Module.addUV(self: DynamicMesh, vector2: Vector2): UVID
+	return self.EditableMesh:AddUV(vector2);
 end
 
 --[[
 	Create a MeshPart from the EditableMesh.
 ]]
-function Module.meshPart(self: DynamicMesh): MeshPart
-	return AssetService:CreateMeshPartAsync(content_fromObject(self.EditableMesh))
-end
-
---[[
-	Create a copy of the EditableMesh.
-]]
-function Module.staticCopy(self: DynamicMesh): EditableMesh
-	return AssetService:CreateEditableMeshAsync(content_fromObject(self.EditableMesh))
-end
-
-function Module.renew(self: DynamicMesh)
-	self.EditableMesh:Destroy()
-	self.EditableMesh = assert(AssetService:CreateEditableMesh(), "Memory budget exhausted.")
-	table_clear(self.SpatialDictionary)
+function Module.createMeshPart(self: DynamicMesh): MeshPart
+	return AssetService:CreateMeshPartAsync(Content_fromObject(self.EditableMesh))
 end
 
 function Module.toContent(self: DynamicMesh): Content
-	return content_fromObject(self.EditableMesh)
-end
-
---[[
-	If the vertex exists at the position, return the vertexID.  Otherwise, create a new vertex at the position and return its vertexID.
-]]
-function Module.upsertVertex(self: DynamicMesh, x: number, y: number, z: number): number
-	local key = ((x * 1000 + .5) // 1 + 1024576) + ((y * 1000 + .5) // 1 + 1024000) * 2097152 + ((z * 1000 + .5) // 1 + 1024576) * 4398046511104
-	
-	local spatialDictionary = self.SpatialDictionary
-	local vertexID: number? = spatialDictionary[key]
-	if vertexID then
-		return vertexID
-	end
-
-	vertexID = self.EditableMesh:AddVertex(vector3_new(x, y, z))
-	spatialDictionary[key] = vertexID
-
-	return vertexID
-end
-
---[[
-	Get the vertex at a position if it exists.
-]]
-function Module.vertexAtPosition(self: DynamicMesh, x: number, y: number, z: number): number?
-	return self.SpatialDictionary[((x * 1000 + .5) // 1 + 1024576) + ((y * 1000 + .5) // 1 + 1024000) * 2097152 + ((z * 1000 + .5) // 1 + 1024576) * 4398046511104]
+	return Content_fromObject(self.EditableMesh)
 end
 
 
